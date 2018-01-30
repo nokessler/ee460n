@@ -67,21 +67,21 @@ int toNum(char *pStr) {
 /* checks to see if line starts with opcode or label
 returns 1 if starts with opcode, -1 if starts with label */
 int isOpcode(char *pt) {
-   if(!strcmp(pt, "add")) return(1);
-   if(!strcmp(pt, "and")) return(1);
-   if(!strcmp(pt, "br")) return(1);
-   if(!strcmp(pt, "jmp") || !strcmp(pt, "ret")) return(1);
-   if(!strcmp(pt, "jsr") || !strcmp(pt, "jsrr")) return(1);
-   if(!strcmp(pt, "ldb")) return(1);
-   if(!strcmp(pt, "ldw")) return(1);
-   if(!strcmp(pt, "lea")) return(1);
-   if(!strcmp(pt, "not") || !strcmp("xor")) return(1);
-   if(!strcmp(pt, "rti")) return(1);
-   if(!strcmp(pt, "lshf") || !strcmp(pt, "rshfl") || !strcmp("rshfa")) return(1);
-   if(!strcmp(pt, "stb")) return(1);
-   if(!strcmp(pt, "stw")) return(1);
-   if(!strcmp(pt, "trap") || !strcmp(pt, "halt")) return(1);
-   if(!strcmp(pt, "nop")) return(1);
+   if (!strcmp(pt, "add")) return(1);
+   if (!strcmp(pt, "and")) return(1);
+   if (!strncmp(pt, "br", 2)) return(1);
+   if (!strcmp(pt, "jmp") || !strcmp(pt, "ret")) return(1);
+   if (!strcmp(pt, "jsr") || !strcmp(pt, "jsrr")) return(1);
+   if (!strcmp(pt, "ldb")) return(1);
+   if (!strcmp(pt, "ldw")) return(1);
+   if (!strcmp(pt, "lea")) return(1);
+   if (!strcmp(pt, "not") || !strcmp(pt, "xor")) return(1);
+   if (!strcmp(pt, "rti")) return(1);
+   if (!strcmp(pt, "lshf") || !strcmp(pt, "rshfl") || !strcmp(pt, "rshfa")) return(1);
+   if (!strcmp(pt, "stb")) return(1);
+   if (!strcmp(pt, "stw")) return(1);
+   if (!strcmp(pt, "trap") || !strcmp(pt, "halt")) return(1);
+   if (!strcmp(pt, "nop")) return(1);
    return(-1);
 }
 
@@ -130,20 +130,21 @@ int pass1(char *inFile) {
       lRet = readAndParse(lInfile, lLine, &lLabel, &lOpcode, &lArg1, &lArg2, &lArg3, &lArg4);
       if (lRet != DONE && lRet != EMPTY_LINE){
          /* Get line to start program */
-         if (!strcmp(lOpcode, '.orig')) {
+         if (!strcmp(lOpcode, ".orig")) {
             start = toNum(lArg1);
             if (start % 2) exit(3);
             location_counter = start;
          }
          if (*lLabel) {
             /* Check if label is valid */
-            if (strcmp(lLabel, 'getc') || (strcmp(lLabel, 'in')) || (strcmp(lLabel, 'out')) || (strcmp(lLabel, 'puts'))) exit(4);
+            if (strcmp(lLabel, "getc") || (strcmp(lLabel, "in")) || (strcmp(lLabel, "out")) || (strcmp(lLabel, "puts"))) exit(4);
             if (strlen(lLabel) > 20) exit(4);
             for (i = 0; i < 255; i++) {
-               if (!strcmp(lLabel, symbol_table[i])) exit(4);
+               if (!strcmp(lLabel, symbol_table[i].label)) exit(4);
             }
-            if (lLabel[0] = 'x') exit(4);
+            if (lLabel[0] == 'x') exit(4);
             if ((lLabel[0] < 'a') || (lLabel[0]) > 'z') exit(4);
+            if ((lLabel[0] == 'r') && ((lLabel[1] - '0' >= 0) && (lLabel[1] - '0' <= 8))) exit(4);
             for (i = 0; i < 20; i++) {
                if ((lLabel[i] < '0') || ((lLabel[i] > '9') && (lLabel[i] < 'a')) || (lLabel[i] > 'z')) exit(4);
             }
@@ -158,6 +159,86 @@ int pass1(char *inFile) {
    return(0);
 }
 
+int registerNum(char *reg) {
+   int num = reg[1] - '0';
+   if ((num > 7) || (num < 0)) exit(4);
+   return(num);
+}
+
+int labelOffset(char *label, int location) {
+   int i;
+   for (i = 0; i < 255; i++) {
+      if (!strcmp(lLabel, symbol_table[i].label)) {
+         int address = symbol_table[i].address;
+         int pc = location + 2;
+         int offset = (address - pc) / 2;
+         return(offset);
+      } else exit(1);
+   }
+}
+
+int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int location) {
+   if (!strcmp(opcode, "add")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0x1000;
+      result += registerNum(arg1) << 9;
+      result += registerNum(arg2) << 6;
+      if (arg3[0] == 'r') result += registerNum(arg3);
+      else {
+         result += 1 << 5;
+         int imm = toNum(arg3);
+         if ((imm > 15) || (imm < -16)) exit(3);
+         result += imm;
+      }
+      return(result);
+   }
+   if (!strcmp(opcode, "and")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0x5000;
+      result += registerNum(arg1) << 9;
+      result += registerNum(arg2) << 6;
+      if (arg3[0] == 'r') result += registerNum(arg3);
+      else {
+         result += 1 << 5;
+         int imm = toNum(arg3);
+         if ((imm > 15) || (imm < -16)) exit(3);
+         result += imm;
+      }
+      return(result);
+   }
+   if (!strncmp(opcode, "br", 2)) {
+      if (!*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      int result;
+      if (!strcmp(opcode, "br") || !strcmp(opcode, "brnzp")) result = 0x0e00
+      if (!strcmp(opcode, "brp")) result = 0x0200;
+      if (!strcmp(opcode, "brz")) result = 0x0400;
+      if (!strcmp(opcode, "brzp")) result = 0x0600;
+      if (!strcmp(opcode, "brn")) result = 0x0800;
+      if (!strcmp(opcode, "brnp")) result = 0x0a00;
+      if (!strcmp(opcode, "brnz")) result = 0x0c00;
+      result += labelOffset(arg1, location);
+      return(result);
+   }
+   if (!strcmp(opcode, "jmp"))
+   if (!strcmp(opcode, "ret"))
+   if (!strcmp(opcode, "jsr"))
+   if (!strcmp(opcode, "jsrr"))
+   if (!strcmp(opcode, "ldb"))
+   if (!strcmp(opcode, "ldw"))
+   if (!strcmp(opcode, "lea"))
+   if (!strcmp(opcode, "not"))
+   if (!strcmp(opcode, "xor"))
+   if (!strcmp(opcode, "rti"))
+   if (!strcmp(opcode, "lshf"))
+   if (!strcmp(opcode, "rshfl"))
+   if (!strcmp(opcode, "rshfa"))
+   if (!strcmp(opcode, "stb"))
+   if (!strcmp(opcode, "stw"))
+   if (!strcmp(opcode, "trap"))
+   if (!strcmp(opcode, "halt"))
+   if (!strcmp(opcode, "nop"))
+}
+
 int pass2(char *inFile, char *outFile) {
    char lLine[MAX_LINE_LENGTH + 1], *lLabel, *lOpcode, *lArg1, *lArg2, *lArg3, *lArg4;
    int lRet;
@@ -165,13 +246,19 @@ int pass2(char *inFile, char *outFile) {
    lInfile = fopen(inFile, "r");        /* open the input file */
    FILE * pOutfile;
    pOutfile = fopen(outFile, "w");
+   int location_counter = start;
    do {
 
       lRet = readAndParse(lInfile, lLine, &lLabel, &lOpcode, &lArg1, &lArg2, &lArg3, &lArg4);
       if(lRet != DONE && lRet != EMPTY_LINE) {
-         if (!strcmp(lOpcode, '.orig')) {
-            fprintf(pOutfile, "0x%.4X\n", start);
+         if (!strcmp(lOpcode, ".orig")) {
+            fprintf(pOutfile, "0x%.4X\n", start); /* writes first line to output file */
+            continue;
          }
+         if (!strcmp(lOpcode, ".end")) break; /* breaks loop if end of file is reached */
+         if (isOpcode(lOpcode) == -1) exit(2); /* checks for invalid opcodes */
+         fprintf(pOutfile, "0x%.4X\n", translate(lOpcode, lArg1, lArg2, lArg3, lArg4, location_counter)); /* writes instruction in hex to output */
+         location_counter += 2;
       }
    } while(lRet != DONE);
    return(0);
