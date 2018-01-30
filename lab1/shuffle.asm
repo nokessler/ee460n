@@ -34,4 +34,5 @@ MASK  AND R2, R2, x0003
    ADD R7, R7, #1
    ADD R6, R7, #-4
    BRN LOOP
+   HALT
    .END
