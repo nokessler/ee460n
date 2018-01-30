@@ -82,6 +82,9 @@ int isOpcode(char *pt) {
    if (!strcmp(pt, "stw")) return(1);
    if (!strcmp(pt, "trap") || !strcmp(pt, "halt")) return(1);
    if (!strcmp(pt, "nop")) return(1);
+   if (!strcmp(pt, ".orig")) return(1);
+   if (!strcmp(pt, ".fill")) return(1);
+   if (!strcmp(pt, ".end")) return(1);
    return(-1);
 }
 
@@ -116,6 +119,7 @@ int readAndParse(FILE *pInfile, char *pLine, char **pLabel, char **pOpcode, char
 } /* Note: MAX_LINE_LENGTH, OK, EMPTY_LINE, and DONE are defined values */
 
 int start;
+int orig = 0;
 
 /* first pass, creates symbol table */
 int pass1(char *inFile) {
@@ -131,9 +135,11 @@ int pass1(char *inFile) {
       if (lRet != DONE && lRet != EMPTY_LINE){
          /* Get line to start program */
          if (!strcmp(lOpcode, ".orig")) {
+            if (orig) exit(4);
             start = toNum(lArg1);
-            if (start % 2) exit(3);
+            if ((start % 2) || start < 0) exit(3);
             location_counter = start;
+            orig = 1;
          }
          if (*lLabel) {
             /* Check if label is valid */
@@ -160,6 +166,7 @@ int pass1(char *inFile) {
 }
 
 int registerNum(char *reg) {
+   if (reg[0] != 'r') exit(4);
    int num = reg[1] - '0';
    if ((num > 7) || (num < 0)) exit(4);
    return(num);
@@ -181,28 +188,28 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
    if (!strcmp(opcode, "add")) {
       if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
       int result = 0x1000;
-      result += registerNum(arg1) << 9;
-      result += registerNum(arg2) << 6;
-      if (arg3[0] == 'r') result += registerNum(arg3);
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      if (arg3[0] == 'r') result |= registerNum(arg3);
       else {
-         result += 1 << 5;
+         result |= 1 << 5;
          int imm = toNum(arg3);
          if ((imm > 15) || (imm < -16)) exit(3);
-         result += imm;
+         result |= imm;
       }
       return(result);
    }
    if (!strcmp(opcode, "and")) {
       if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
       int result = 0x5000;
-      result += registerNum(arg1) << 9;
-      result += registerNum(arg2) << 6;
-      if (arg3[0] == 'r') result += registerNum(arg3);
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      if (arg3[0] == 'r') result |= registerNum(arg3);
       else {
-         result += 1 << 5;
+         result |= 1 << 5;
          int imm = toNum(arg3);
          if ((imm > 15) || (imm < -16)) exit(3);
-         result += imm;
+         result |= imm;
       }
       return(result);
    }
@@ -216,27 +223,163 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       if (!strcmp(opcode, "brn")) result = 0x0800;
       if (!strcmp(opcode, "brnp")) result = 0x0a00;
       if (!strcmp(opcode, "brnz")) result = 0x0c00;
-      result += labelOffset(arg1, location);
+      int offset = labelOffset(arg1, location);
+      if ((offset > 255) || (offset < -256)) exit(4);
+      result |= offset;
       return(result);
    }
-   if (!strcmp(opcode, "jmp"))
-   if (!strcmp(opcode, "ret"))
-   if (!strcmp(opcode, "jsr"))
-   if (!strcmp(opcode, "jsrr"))
-   if (!strcmp(opcode, "ldb"))
-   if (!strcmp(opcode, "ldw"))
-   if (!strcmp(opcode, "lea"))
-   if (!strcmp(opcode, "not"))
-   if (!strcmp(opcode, "xor"))
-   if (!strcmp(opcode, "rti"))
-   if (!strcmp(opcode, "lshf"))
-   if (!strcmp(opcode, "rshfl"))
-   if (!strcmp(opcode, "rshfa"))
-   if (!strcmp(opcode, "stb"))
-   if (!strcmp(opcode, "stw"))
-   if (!strcmp(opcode, "trap"))
-   if (!strcmp(opcode, "halt"))
-   if (!strcmp(opcode, "nop"))
+   if (!strcmp(opcode, "jmp")) {
+      if (!*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      int result = 0xc000;
+      int baseR = registerNum(arg1);
+      result |= baseR << 6;
+      return(result);
+   }
+   if (!strcmp(opcode, "ret")) {
+      if (*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      return(0xc1c0);
+   }
+   if (!strcmp(opcode, "jsr")) {
+      if (!*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      int result = 0x4800;
+      int offset = labelOffset(arg1, location);
+      if ((offset > 1023) || (offset < -1024)) exit(4);
+      result |= offset;
+      return(result);
+   }
+   if (!strcmp(opcode, "jsrr")) {
+      if (!*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      int result = 0x4000;
+      int baseR = registerNum(arg1);
+      result |= baseR << 6;
+      return(result);
+   }
+   if (!strcmp(opcode, "ldb")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0x2000;
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      int offset = labelOffset(arg3, location);
+      if ((offset > 31) || offset < -32) exit(4);
+      result |= offset;
+      return(result);
+   }
+   if (!strcmp(opcode, "ldw")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0x6000;
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      int offset = labelOffset(arg3, location);
+      if ((offset > 31) || offset < -32) exit(4);
+      result |= offset;
+      return(result);
+   }
+   if (!strcmp(opcode, "lea")) {
+      if (!*arg1 || !*arg2 || *arg3 || *arg4) exit(4);
+      int result = 0xe000;
+      result |= registerNum(arg1) << 9;
+      int offset = labelOffset(arg2, location);
+      if ((offset > 255) || (offset < -256)) exit(4);
+      result |= offset;
+      return(result);
+   }
+   if (!strcmp(opcode, "not")) {
+      if (!*arg1 || !*arg2 || *arg3 || *arg4) exit(4);
+      int result = 0x903f;
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      return(result);
+   }
+   if (!strcmp(opcode, "xor")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0x9000;
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      if (arg3[0] == 'r') result |= registerNum(arg3);
+      else {
+         result |= 1 << 5;
+         int imm = toNum(arg3);
+         if ((imm > 15) || (imm < -16)) exit(3);
+         result |= imm;
+      }
+      return(result);
+   }
+   if (!strcmp(opcode, "rti")) {
+      if (*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      return(0x8000);
+   }
+   if (!strcmp(opcode, "lshf")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0xd000;
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      int amount = toNum(arg3);
+      if ((amount > 15) || amount < 0) exit(3);
+      result |= amount;
+      return(result);
+   }
+   if (!strcmp(opcode, "rshfl")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0xd010;
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      int amount = toNum(arg3);
+      if ((amount > 15) || amount < 0) exit(3);
+      result |= amount;
+      return(result);
+   }
+   if (!strcmp(opcode, "rshfa")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0xd020;
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      int amount = toNum(arg3);
+      if ((amount > 15) || amount < 0) exit(3);
+      result |= amount;
+      return(result);
+   }
+   if (!strcmp(opcode, "stb")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0x3000;
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      int offset = labelOffset(arg3, location);
+      if ((offset > 31) || offset < -32) exit(4);
+      result |= offset;
+      return(result);
+   }
+   if (!strcmp(opcode, "stw")) {
+      if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
+      int result = 0x7000;
+      result |= registerNum(arg1) << 9;
+      result |= registerNum(arg2) << 6;
+      int offset = labelOffset(arg3, location);
+      if ((offset > 31) || offset < -32) exit(4);
+      result |= offset;
+      return(result);
+   }
+   if (!strcmp(opcode, "trap")) {
+      if (!*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      int result = 0xf000;
+      int vector = toNum(arg1);
+      if ((vector > 255) || (vector < 0)) exit(3);
+      result |= vector;
+      return(result);
+   }
+   if (!strcmp(opcode, "halt")) {
+      if (*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      return(0xf025);
+   }
+   if (!strcmp(opcode, "nop")) {
+      if (*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      return(0);
+   }
+   if (!strcmp(opcode, ".fill")) {
+      if (!*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      int result = toNum(arg1);
+      if ((result > 65535) || (result < 0)) exit(3);
+      return(result);
+   }
 }
 
 int pass2(char *inFile, char *outFile) {
