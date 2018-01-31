@@ -9,7 +9,7 @@ FILE* outfile = NULL;
 
 typedef struct {
    int address;
-   char *label;
+   char label[20];
 } table_entry;
 
 table_entry symbol_table[255];
@@ -123,6 +123,7 @@ int orig = 0;
 
 /* first pass, creates symbol table */
 int pass1(char *inFile) {
+   printf("beginning pass 1\n");
    char lLine[MAX_LINE_LENGTH + 1], *lLabel, *lOpcode, *lArg1, *lArg2, *lArg3, *lArg4;
    int lRet;
    int i;
@@ -135,33 +136,52 @@ int pass1(char *inFile) {
       if (lRet != DONE && lRet != EMPTY_LINE){
          /* Get line to start program */
          if (!strcmp(lOpcode, ".orig")) {
+            printf("got start location\n");
             if (orig) exit(4);
             start = toNum(lArg1);
             if ((start % 2) || start < 0) exit(3);
-            location_counter = start;
+            location_counter = start - 2;
             orig = 1;
          }
          if (*lLabel) {
+            printf("label: %s\n", lLabel);
             /* Check if label is valid */
-            if (strcmp(lLabel, "getc") || (strcmp(lLabel, "in")) || (strcmp(lLabel, "out")) || (strcmp(lLabel, "puts"))) exit(4);
-            if (strlen(lLabel) > 20) exit(4);
-            for (i = 0; i < 255; i++) {
-               if (!strcmp(lLabel, symbol_table[i].label)) exit(4);
+            if (!strcmp(lLabel, "getc") || (!strcmp(lLabel, "in")) || (!strcmp(lLabel, "out")) || (!strcmp(lLabel, "puts"))) {
+               exit(4);
             }
-            if (lLabel[0] == 'x') exit(4);
-            if ((lLabel[0] < 'a') || (lLabel[0]) > 'z') exit(4);
-            if ((lLabel[0] == 'r') && ((lLabel[1] - '0' >= 0) && (lLabel[1] - '0' <= 8))) exit(4);
+            if (strlen(lLabel) > 20) {
+               exit(4);
+            }
+            for (i = 1; i < 255; i++) {
+               if (!strcmp(lLabel, symbol_table[i].label)) {
+                  exit(4);
+               }
+            }
+            if (lLabel[0] == 'x') {
+               exit(4);
+            }
+            if ((lLabel[0] < 'a') || (lLabel[0]) > 'z') {
+               exit(4);
+            }
+            if ((lLabel[0] == 'r') && ((lLabel[1] - '0' >= 0) && (lLabel[1] - '0' <= 8))) {
+               exit(4);
+            }
             for (i = 0; i < 20; i++) {
-               if ((lLabel[i] < '0') || ((lLabel[i] > '9') && (lLabel[i] < 'a')) || (lLabel[i] > 'z')) exit(4);
+               if (lLabel[i] == 0) break;
+               if ((lLabel[i] < '0') || ((lLabel[i] > '9') && (lLabel[i] < 'a')) || (lLabel[i] > 'z')) {
+                  exit(4);
+               }
             }
             /* add label to symbol table */
-            symbol_table[entry].label = lLabel;
+            strncpy(symbol_table[entry].label, lLabel, 20);
             symbol_table[entry].address = location_counter;
+            printf("entry %i label %s added to symbol table at address %x\n", entry, symbol_table[entry].label, symbol_table[entry].address);
             entry++;
-            location_counter += 2;
          }
+         location_counter += 2;
       }
    } while (lRet != DONE);
+   printf("finish pass 1\n");
    return(0);
 }
 
@@ -175,13 +195,13 @@ int registerNum(char *reg) {
 int labelOffset(char *label, int location) {
    int i;
    for (i = 0; i < 255; i++) {
-      if (!strcmp(lLabel, symbol_table[i].label)) {
+      if (!strcmp(label, symbol_table[i].label)) {
          int address = symbol_table[i].address;
          int pc = location + 2;
          int offset = (address - pc) / 2;
          return(offset);
-      } else exit(1);
-   }
+      }
+   } exit(1);
 }
 
 int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int location) {
@@ -195,8 +215,10 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
          result |= 1 << 5;
          int imm = toNum(arg3);
          if ((imm > 15) || (imm < -16)) exit(3);
+         imm &= 0x1f;
          result |= imm;
       }
+      printf("translated add\n");
       return(result);
    }
    if (!strcmp(opcode, "and")) {
@@ -209,14 +231,16 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
          result |= 1 << 5;
          int imm = toNum(arg3);
          if ((imm > 15) || (imm < -16)) exit(3);
+         imm &= 0x1f;
          result |= imm;
       }
+      printf("translated and\n");
       return(result);
    }
    if (!strncmp(opcode, "br", 2)) {
       if (!*arg1 || *arg2 || *arg3 || *arg4) exit(4);
       int result;
-      if (!strcmp(opcode, "br") || !strcmp(opcode, "brnzp")) result = 0x0e00
+      if (!strcmp(opcode, "br") || !strcmp(opcode, "brnzp")) result = 0x0e00;
       if (!strcmp(opcode, "brp")) result = 0x0200;
       if (!strcmp(opcode, "brz")) result = 0x0400;
       if (!strcmp(opcode, "brzp")) result = 0x0600;
@@ -225,7 +249,9 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       if (!strcmp(opcode, "brnz")) result = 0x0c00;
       int offset = labelOffset(arg1, location);
       if ((offset > 255) || (offset < -256)) exit(4);
+      offset &= 0x1ff;
       result |= offset;
+      printf("translated br\n");
       return(result);
    }
    if (!strcmp(opcode, "jmp")) {
@@ -233,10 +259,12 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int result = 0xc000;
       int baseR = registerNum(arg1);
       result |= baseR << 6;
+      printf("translated jmp\n");
       return(result);
    }
    if (!strcmp(opcode, "ret")) {
       if (*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      printf("translated ret\n");
       return(0xc1c0);
    }
    if (!strcmp(opcode, "jsr")) {
@@ -244,7 +272,9 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int result = 0x4800;
       int offset = labelOffset(arg1, location);
       if ((offset > 1023) || (offset < -1024)) exit(4);
+      offset &= 0x7ff;
       result |= offset;
+      printf("translated jsr\n");
       return(result);
    }
    if (!strcmp(opcode, "jsrr")) {
@@ -252,6 +282,7 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int result = 0x4000;
       int baseR = registerNum(arg1);
       result |= baseR << 6;
+      printf("translated jsrr\n");
       return(result);
    }
    if (!strcmp(opcode, "ldb")) {
@@ -259,9 +290,11 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int result = 0x2000;
       result |= registerNum(arg1) << 9;
       result |= registerNum(arg2) << 6;
-      int offset = labelOffset(arg3, location);
+      int offset = toNum(arg3);
       if ((offset > 31) || offset < -32) exit(4);
+      offset &= 0x3f;
       result |= offset;
+      printf("translated ldb\n");
       return(result);
    }
    if (!strcmp(opcode, "ldw")) {
@@ -269,9 +302,11 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int result = 0x6000;
       result |= registerNum(arg1) << 9;
       result |= registerNum(arg2) << 6;
-      int offset = labelOffset(arg3, location);
+      int offset = toNum(arg3);
       if ((offset > 31) || offset < -32) exit(4);
+      offset &= 0x3f;
       result |= offset;
+      printf("translated ldw\n");
       return(result);
    }
    if (!strcmp(opcode, "lea")) {
@@ -280,7 +315,9 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       result |= registerNum(arg1) << 9;
       int offset = labelOffset(arg2, location);
       if ((offset > 255) || (offset < -256)) exit(4);
+      offset &= 0x1ff;
       result |= offset;
+      printf("translated lea\n");
       return(result);
    }
    if (!strcmp(opcode, "not")) {
@@ -288,6 +325,7 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int result = 0x903f;
       result |= registerNum(arg1) << 9;
       result |= registerNum(arg2) << 6;
+      printf("translated not\n");
       return(result);
    }
    if (!strcmp(opcode, "xor")) {
@@ -300,12 +338,15 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
          result |= 1 << 5;
          int imm = toNum(arg3);
          if ((imm > 15) || (imm < -16)) exit(3);
+         imm &= 0x1f;
          result |= imm;
       }
+      printf("translated xor\n");
       return(result);
    }
    if (!strcmp(opcode, "rti")) {
       if (*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      printf("translated rti\n");
       return(0x8000);
    }
    if (!strcmp(opcode, "lshf")) {
@@ -316,6 +357,7 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int amount = toNum(arg3);
       if ((amount > 15) || amount < 0) exit(3);
       result |= amount;
+      printf("translated lshf\n");
       return(result);
    }
    if (!strcmp(opcode, "rshfl")) {
@@ -326,16 +368,18 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int amount = toNum(arg3);
       if ((amount > 15) || amount < 0) exit(3);
       result |= amount;
+      printf("translated rshfl\n");
       return(result);
    }
    if (!strcmp(opcode, "rshfa")) {
       if (!*arg1 || !*arg2 || !*arg3 || *arg4) exit(4);
-      int result = 0xd020;
+      int result = 0xd030;
       result |= registerNum(arg1) << 9;
       result |= registerNum(arg2) << 6;
       int amount = toNum(arg3);
       if ((amount > 15) || amount < 0) exit(3);
       result |= amount;
+      printf("translated rshfa\n");
       return(result);
    }
    if (!strcmp(opcode, "stb")) {
@@ -343,9 +387,11 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int result = 0x3000;
       result |= registerNum(arg1) << 9;
       result |= registerNum(arg2) << 6;
-      int offset = labelOffset(arg3, location);
+      int offset = toNum(arg3);
       if ((offset > 31) || offset < -32) exit(4);
+      offset &= 0x3f;
       result |= offset;
+      printf("translated stb\n");
       return(result);
    }
    if (!strcmp(opcode, "stw")) {
@@ -353,9 +399,11 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int result = 0x7000;
       result |= registerNum(arg1) << 9;
       result |= registerNum(arg2) << 6;
-      int offset = labelOffset(arg3, location);
+      int offset = toNum(arg3);
       if ((offset > 31) || offset < -32) exit(4);
+      offset &= 0x3f;
       result |= offset;
+      printf("translated stw\n");
       return(result);
    }
    if (!strcmp(opcode, "trap")) {
@@ -364,25 +412,30 @@ int translate(char *opcode, char *arg1, char*arg2, char *arg3, char *arg4, int l
       int vector = toNum(arg1);
       if ((vector > 255) || (vector < 0)) exit(3);
       result |= vector;
+      printf("translated trap\n");
       return(result);
    }
    if (!strcmp(opcode, "halt")) {
       if (*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      printf("translated halt\n");
       return(0xf025);
    }
    if (!strcmp(opcode, "nop")) {
       if (*arg1 || *arg2 || *arg3 || *arg4) exit(4);
+      printf("translated nop\n");
       return(0);
    }
    if (!strcmp(opcode, ".fill")) {
       if (!*arg1 || *arg2 || *arg3 || *arg4) exit(4);
       int result = toNum(arg1);
       if ((result > 65535) || (result < 0)) exit(3);
+      printf("translated .fill\n");
       return(result);
    }
 }
 
 int pass2(char *inFile, char *outFile) {
+   printf("\nbeginning pass 2\n");
    char lLine[MAX_LINE_LENGTH + 1], *lLabel, *lOpcode, *lArg1, *lArg2, *lArg3, *lArg4;
    int lRet;
    FILE * lInfile;
@@ -430,5 +483,6 @@ int main(int argc, char* argv[]) {
    pass2(argv[1], argv[2]);
    fclose(infile);
    fclose(outfile);
+   printf("finished assembly\n");
    exit(0);
 }
