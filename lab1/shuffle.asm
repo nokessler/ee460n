@@ -15,11 +15,11 @@ LOOP  ADD R2, R1, #0       ;0x1460
    BRZ ONE                 ;0x0406
    ADD R5, R7, #-2         ;0x1BFE
    BRZ TWO                 ;0x0402
-   RSHFA R2, R2, #6        ;0xD4B6
+   RSHFL R2, R2, #6        ;0xD496
    BRNZP MASK              ;0x0E03
-TWO   RSHFA R2, R2, #4     ;0xD4B4
+TWO   RSHFL R2, R2, #4     ;0xD494
    BRNZP MASK              ;0x0E01
-ONE   RSHFA R2, R2, #2     ;0xD4B2
+ONE   RSHFL R2, R2, #2     ;0xD492
 MASK  AND R2, R2, #3       ;0x54A3
    ;LOAD AND STORE DATA
    ADD R2, R0, R2          ;0x1402
