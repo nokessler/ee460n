@@ -143,6 +143,7 @@ int pass1(char *inFile) {
             location_counter = start - 2;
             orig = 1;
          }
+         if (location_counter == 0) exit(4);
          if (*lLabel) {
             printf("label: %s\n", lLabel);
             /* Check if label is valid */
@@ -188,6 +189,7 @@ int pass1(char *inFile) {
 int registerNum(char *reg) {
    if (reg[0] != 'r') exit(4);
    int num = reg[1] - '0';
+   if (reg[2]) exit(4);
    if ((num > 7) || (num < 0)) exit(4);
    return(num);
 }
