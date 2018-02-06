@@ -1,3 +1,9 @@
+/*
+	Name: Noah Kessler
+	UTEID: njk576
+*/
+
+
 #include <stdio.h> /* standard input/output library */
 #include <stdlib.h> /* Standard C Library */
 #include <string.h> /* String operations library */
@@ -9,7 +15,7 @@ FILE* outfile = NULL;
 
 typedef struct {
    int address;
-   char label[20];
+   char label[21];
 } table_entry;
 
 table_entry symbol_table[255];

@@ -1,3 +1,6 @@
+; Name: Noah Kessler
+; UTEID: njk576
+
    .ORIG x3000             ;0x3000
    ;INITIALIZATION, LOAD x4000 INTO R0 AND CONTROL MASK INTO R1
    LEA R1, ADR             ;0xE219
