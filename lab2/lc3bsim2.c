@@ -581,7 +581,10 @@ void STW(instruction) {
 void TRAP(instruction) {
    printf("executing TRAP\n");
    NEXT_LATCHES.REGS[7] = Low16bits(NEXT_LATCHES.PC);
-   NEXT_LATCHES.PC = Low16bits((instruction & 0x00FF) << 1);
+   int vector = Low16bits((instruction & 0x00FF) << 1);
+   int address = MEMORY[vector >> 1][0] & 0x00FF;
+   address |= (MEMORY[vector >> 1][1] & 0x00FF) << 8;
+   NEXT_LATCHES.PC = address;
 }
 
 void XOR(instruction) {
@@ -617,7 +620,7 @@ void process_instruction(){
       case 0x05: AND(instruction); break;
       case 0x00: BR(instruction); break;
       case 0x0C: JMP(instruction); break;
-      case 0x08: JSR(instruction); break;
+      case 0x04: JSR(instruction); break;
       case 0x02: LDB(instruction); break;
       case 0x06: LDW(instruction); break;
       case 0x0E: LEA(instruction); break;
