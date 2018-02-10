@@ -402,7 +402,200 @@ int main(int argc, char *argv[]) {
 
 /***************************************************************/
 
+int signExtend(int num, int signbit) {
+   if (num && (1 << signbit)) {
+      num = num << (8*sizeof(int)-1-signbit);
+      num = num >> (8*sizeof(int)-1-signbit);
+   }
+   return(num);
+}
 
+void setConditionCodes(int result) {
+   if (result < 0) {
+      NEXT_LATCHES.N = 1;
+      NEXT_LATCHES.Z = 0;
+      NEXT_LATCHES.P = 0;
+   } else if (result > 0) {
+      NEXT_LATCHES.N = 0;
+      NEXT_LATCHES.Z = 0;
+      NEXT_LATCHES.P = 1;
+   } else {
+      NEXT_LATCHES.N = 0;
+      NEXT_LATCHES.Z = 1;
+      NEXT_LATCHES.P = 0;
+   }
+}
+
+void ADD(instruction) {
+   printf("executing ADD\n");
+   int dr = (instruction >> 9) & 0x07;
+   int sr1 = (instruction >> 6) & 0x07;
+   int result = Low16bits(CURRENT_LATCHES.REGS[sr1]);
+   if (instruction & 0x20) {
+      result += signExtend((instruction & 0x1F), 4);
+   } else {
+      int sr2 = instruction & 0x07;
+      result += Low16bits(CURRENT_LATCHES.REGS[sr2]);
+   }
+   setConditionCodes(signExtend(Low16bits(result), 15));
+   NEXT_LATCHES.REGS[dr] = Low16bits(result);
+}
+
+void AND(instruction) {
+   printf("executing AND\n");
+   int dr = (instruction >> 9) & 0x07;
+   int sr1 = (instruction >> 6) & 0x07;
+   int result = Low16bits(CURRENT_LATCHES.REGS[sr1]);
+   if (instruction & 0x20) result &= signExtend((instruction & 0x1F), 4);
+   else {
+      int sr2 = instruction & 0x07;
+      result &= Low16bits(CURRENT_LATCHES.REGS[sr2]);
+   }
+   setConditionCodes(signExtend(Low16bits(result), 15));
+   NEXT_LATCHES.REGS[dr] = Low16bits(result);
+}
+
+void takeBranch(int instruction) {
+   int pc = Low16bits(NEXT_LATCHES.PC);
+   int offset = signExtend((instruction & 0x01FF), 8);
+   offset = offset << 1;
+   pc += offset;
+   NEXT_LATCHES.PC = Low16bits(pc);
+   printf("branching to %x\n", Low16bits(pc));
+}
+
+void BR(instruction) {
+   printf("executing BR\n");
+   if(instruction & 0x0200) {
+      if (CURRENT_LATCHES.P) {
+         takeBranch(instruction);
+         return;
+      }
+   }
+   if (instruction & 0x0400) {
+      if (CURRENT_LATCHES.Z) {
+         takeBranch(instruction);
+         return;
+      }
+   }
+   if (instruction & 0x0800) {
+      if (CURRENT_LATCHES.N) {
+         takeBranch(instruction);
+         return;
+      }
+   }
+}
+
+void JMP(instruction) {
+   printf("executing JMP\n");
+   int location = signExtend(Low16bits(CURRENT_LATCHES.REGS[(instruction >> 6) & 0x07]), 15);
+   NEXT_LATCHES.PC = Low16bits(location);
+}
+
+void JSR(instruction) {
+   printf("executing JSR\n");
+   NEXT_LATCHES.REGS[7] = Low16bits(NEXT_LATCHES.PC);
+   if (instruction & 0x0800) {
+      int offset = signExtend((instruction & 0x07FF), 10);
+      offset = offset << 1;
+      NEXT_LATCHES.PC += offset;
+   } else {
+      NEXT_LATCHES.PC = Low16bits(CURRENT_LATCHES.REGS[(instruction >> 6) & 0x07]);
+   }
+}
+
+void LDB(instruction) {
+   printf("executing LDB\n");
+   int dr = (instruction >> 9) & 0x07;
+   int br = (instruction >> 6) & 0x07;
+   int offset = signExtend((instruction & 0x03F), 5);
+   int base = Low16bits(CURRENT_LATCHES.REGS[br]);
+   base += offset;
+   int result = MEMORY[base >> 1][base & 1] & 0x00FF;
+   setConditionCodes(signExtend(result, 7));
+   NEXT_LATCHES.REGS[dr] = result & 0x00FF;
+}
+
+void LDW(instruction) {
+   printf("executing LDW\n");
+   int dr = (instruction >> 9) & 0x07;
+   int br = (instruction >> 6) & 0x07;
+   int offset = signExtend((instruction & 0x03F), 5);
+   offset = offset << 1;
+   int base = Low16bits(CURRENT_LATCHES.REGS[br]);
+   base += offset;
+   int result = MEMORY[base >> 1][0] & 0x00FF;
+   result |= (MEMORY[base >> 1][1] & 0x00FF) << 8;
+   setConditionCodes(signExtend(result,15));
+   NEXT_LATCHES.REGS[dr] = Low16bits(result);
+}
+
+void LEA(instruction) {
+   printf("executing LEA\n");
+   int result = signExtend((instruction & 0x1FF), 8);
+   result = result << 1;
+   result += NEXT_LATCHES.PC;
+   setConditionCodes(signExtend(Low16bits(result), 15));
+   int dr = ((instruction >> 9) & 0x07);
+   NEXT_LATCHES.REGS[dr] = result;
+}
+
+void SHF(instruction) {
+   printf("executing SHF\n");
+   int dr = ((instruction >> 9) & 0x07);
+   int sr = ((instruction >> 6) & 0x07);
+   int result = Low16bits(CURRENT_LATCHES.REGS[sr]);
+   switch ((instruction >> 4) & 0x03) {
+      case 0: result = result << (instruction & 0x0F); break;
+      case 1: result = result >> (instruction & 0x0F); break;
+      case 3: result = signExtend(Low16bits(result), 15); result = result >> (instruction & 0x0F); break;
+   }
+}
+
+void STB(instruction) {
+   printf("executing STB\n");
+   int sr = (instruction >> 9) & 0x07;
+   int br = (instruction >> 6) & 0x07;
+   int offset = signExtend((instruction & 0x03F), 5);
+   int base = Low16bits(CURRENT_LATCHES.REGS[br]);
+   base += offset;
+   int store = CURRENT_LATCHES.REGS[sr] & 0x00FF;
+   MEMORY[base >> 1][base & 1] = store;
+}
+
+void STW(instruction) {
+   printf("executing STW\n");
+   int sr = (instruction >> 9) & 0x07;
+   int br = (instruction >> 6) & 0x07;
+   int offset = signExtend((instruction & 0x03F), 5);
+   offset = offset << 1;
+   int base = Low16bits(CURRENT_LATCHES.REGS[br]);
+   base += offset;
+   int storelow = CURRENT_LATCHES.REGS[sr] & 0x00FF;
+   int storehigh = (CURRENT_LATCHES.REGS[sr] >> 8) & 0x00FF;
+   MEMORY[base >> 1][0] = storelow;
+   MEMORY[base >> 1][1] = storehigh;
+}
+
+void TRAP(instruction) {
+   printf("executing TRAP\n");
+   NEXT_LATCHES.REGS[7] = Low16bits(NEXT_LATCHES.PC);
+   NEXT_LATCHES.PC = Low16bits((instruction & 0x00FF) << 1);
+}
+
+void XOR(instruction) {
+   printf("executing XOR\n");
+   int dr = (instruction >> 9) & 0x07;
+   int sr1 = (instruction >> 6) & 0x07;
+   int result = Low16bits(CURRENT_LATCHES.REGS[sr1]);
+   if (instruction & 0x20) result ^= signExtend((instruction & 0x1F), 4);
+   else {
+      int sr2 = instruction & 0x07;
+      result ^= Low16bits(CURRENT_LATCHES.REGS[sr2]);
+   }
+   setConditionCodes(signExtend(Low16bits(result), 15));
+   NEXT_LATCHES.REGS[dr] = Low16bits(result);
+}
 
 void process_instruction(){
   /*  function: process_instruction
@@ -413,5 +606,24 @@ void process_instruction(){
    *       -Execute
    *       -Update NEXT_LATCHES
    */
-
+   int instruction = MEMORY[CURRENT_LATCHES.PC >> 1][0] & 0x00FF;
+   instruction |= (MEMORY[CURRENT_LATCHES.PC >> 1][1] & 0x00FF) << 8;
+   instruction = Low16bits(instruction);
+   int opcode = (instruction >> 12) & 0x0F;
+   NEXT_LATCHES.PC = CURRENT_LATCHES.PC + 2;
+   switch (opcode) {
+      case 0x01: ADD(instruction); break;
+      case 0x05: AND(instruction); break;
+      case 0x00: BR(instruction); break;
+      case 0x0C: JMP(instruction); break;
+      case 0x08: JSR(instruction); break;
+      case 0x02: LDB(instruction); break;
+      case 0x06: LDW(instruction); break;
+      case 0x0E: LEA(instruction); break;
+      case 0x0D: SHF(instruction); break;
+      case 0x03: STB(instruction); break;
+      case 0x07: STW(instruction); break;
+      case 0x0F: TRAP(instruction); break;
+      case 0x09: XOR(instruction); break;
+   }
 }
