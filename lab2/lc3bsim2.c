@@ -535,7 +535,6 @@ void LEA(instruction) {
    int result = signExtend((instruction & 0x1FF), 8);
    result = result << 1;
    result += NEXT_LATCHES.PC;
-   setConditionCodes(signExtend(Low16bits(result), 15));
    int dr = ((instruction >> 9) & 0x07);
    NEXT_LATCHES.REGS[dr] = result;
 }
@@ -550,6 +549,7 @@ void SHF(instruction) {
       case 1: result = result >> (instruction & 0x0F); break;
       case 3: result = signExtend(Low16bits(result), 15); result = result >> (instruction & 0x0F); break;
    }
+   setConditionCodes(signExtend(Low16bits(result), 15));
    NEXT_LATCHES.REGS[dr] = Low16bits(result);
 }
 
