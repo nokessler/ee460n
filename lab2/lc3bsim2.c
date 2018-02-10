@@ -550,6 +550,7 @@ void SHF(instruction) {
       case 1: result = result >> (instruction & 0x0F); break;
       case 3: result = signExtend(Low16bits(result), 15); result = result >> (instruction & 0x0F); break;
    }
+   NEXT_LATCHES.REGS[dr] = Low16bits(result);
 }
 
 void STB(instruction) {
