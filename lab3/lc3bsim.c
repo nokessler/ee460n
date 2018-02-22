@@ -582,11 +582,11 @@ int signExtend(int num, int signbit) {
    return(num);
 }
 
+/*
+* Evaluate the address of the next state according to the
+* micro sequencer logic. Latch the next microinstruction.
+*/
 void eval_micro_sequencer() {
-  /*
-   * Evaluate the address of the next state according to the
-   * micro sequencer logic. Latch the next microinstruction.
-   */
    if(GetIRD(CURRENT_LATCHES.MICROINSTRUCTION)) {
       int inst = CURRENT_LATCHES.IR;
       NEXT_LATCHES.BEN = ((inst & 0x0800) && CURRENT_LATCHES.N) || ((inst & 0x0400) && CURRENT_LATCHES.Z) || ((inst & 0x0200) && CURRENT_LATCHES.P);
@@ -614,52 +614,185 @@ void eval_micro_sequencer() {
    }
 }
 
-
+/*
+* This function emulates memory and the WE logic.
+* Keep track of which cycle of MEMEN we are dealing with.
+* If fourth, we need to latch Ready bit at the end of
+* cycle to prepare microsequencer for the fifth cycle.
+*/
+int MEMEN = 0;
 void cycle_memory() {
-
-  /*
-   * This function emulates memory and the WE logic.
-   * Keep track of which cycle of MEMEN we are dealing with.
-   * If fourth, we need to latch Ready bit at the end of
-   * cycle to prepare microsequencer for the fifth cycle.
-   */
-
+   if (!GetMIO_EN(CURRENT_LATCHES.MICROINSTRUCTION)) return;
+   MEMEN ++;
+   if (MEMEN == 4) NEXT_LATCHES.READY = 1;
 }
 
-
-
+/*
+* Datapath routine emulating operations before driving the bus.
+* Evaluate the input of tristate drivers
+*      Gate_MARMUX,
+*		 Gate_PC,
+*		 Gate_ALU,
+*		 Gate_SHF,
+*		 Gate_MDR.
+*/
+int gate;
 void eval_bus_drivers() {
-
-  /*
-   * Datapath routine emulating operations before driving the bus.
-   * Evaluate the input of tristate drivers
-   *             Gate_MARMUX,
-   *		 Gate_PC,
-   *		 Gate_ALU,
-   *		 Gate_SHF,
-   *		 Gate_MDR.
-   */
-
+   if (GetGATE_MARMUX(CURRENT_LATCHES.MICROINSTRUCTION)) gate = 0;
+   if (GetGATE_PC(CURRENT_LATCHES.MICROINSTRUCTION)) gate = 0x01;
+   if (GetGATE_ALU(CURRENT_LATCHES.MICROINSTRUCTION)) gate = 0x02;
+   if (GetGATE_SHF(CURRENT_LATCHES.MICROINSTRUCTION)) gate = 0x04;
+   if (GetGATE_MDR(CURRENT_LATCHES.MICROINSTRUCTION)) gate = 0x08;
 }
 
-
+/*
+* Datapath routine for driving the bus from one of the 5 possible
+* tristate drivers.
+*/
 void drive_bus() {
-
-  /*
-   * Datapath routine for driving the bus from one of the 5 possible
-   * tristate drivers.
-   */
-
+   if (gate == 0) {
+      if (GetMARMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 0) {
+         BUS = (CURRENT_LATCHES.IR & 0x00FF) << 1;
+      } else {
+         int op1, op2;
+         if (GetADDR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
+            if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) op1 = (CURRENT_LATCHES.IR >> 6) & 0x07;
+            else op1 = (CURRENT_LATCHES.IR >> 9) & 0x07;
+         } else op1 = CURRENT_LATCHES.PC;
+         if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) op2 = signExtend(CURRENT_LATCHES.IR & 0x003F, 5);
+         else if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 2) op2 = signExtend(CURRENT_LATCHES.IR & 0x01FF, 8);
+         else if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 3) op2 = signExtend(CURRENT_LATCHES.IR & 0x07FF, 10);
+         else op2 = 0;
+         if (GetLSHF1(CURRENT_LATCHES.MICROINSTRUCTION)) op2 = op2 << 1;
+         BUS = CURRENT_LATCHES.REGS[op1] + op2;
+      }
+   } else if (gate == 0x01) {
+      BUS = CURRENT_LATCHES.PC;
+   } else if (gate == 0x02) {
+      int sr1, sr2;
+      if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) sr1 = (CURRENT_LATCHES.IR & 0x01C0) >> 6;
+      else sr1 = (CURRENT_LATCHES.IR & 0x0E00) >> 9;
+      if (GetALUK(CURRENT_LATCHES.MICROINSTRUCTION) == 3) BUS = Low16bits(CURRENT_LATCHES.REGS[sr1]);
+      if (CURRENT_LATCHES.IR & 0x0020) {
+         sr2 = signExtend(CURRENT_LATCHES.IR & 0x001F, 4);
+         if (GetALUK(CURRENT_LATCHES.MICROINSTRUCTION) == 0) {
+            BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] + sr2);
+         } else if(GetALUK(CURRENT_LATCHES.MICROINSTRUCTION) == 1) {
+            BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] & sr2);
+         } else if (GetALUK(CURRENT_LATCHES.MICROINSTRUCTION) == 2) {
+            BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] ^ sr2);
+         }
+      } else {
+         sr2 = (CURRENT_LATCHES.IR & 0x07);
+         if (GetALUK(CURRENT_LATCHES.MICROINSTRUCTION) == 0) {
+            BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] + CURRENT_LATCHES.REGS[sr2]);
+         } else if(GetALUK(CURRENT_LATCHES.MICROINSTRUCTION) == 1) {
+            BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] & CURRENT_LATCHES.REGS[sr2]);
+         } else if (GetALUK(CURRENT_LATCHES.MICROINSTRUCTION) == 2) {
+            BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] ^ CURRENT_LATCHES.REGS[sr2]);
+         }
+      }
+   } else if (gate == 0x04) {
+      int sr1;
+      if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) sr1 = (CURRENT_LATCHES.IR >> 6) & 0x07;
+      else sr1 = (CURRENT_LATCHES.IR >> 9) & 0x07;
+      int shift = CURRENT_LATCHES.IR & 0x0F;
+      if (CURRENT_LATCHES.IR & 0x0010) {
+         if (CURRENT_LATCHES.IR & 0x0020) {
+            BUS = Low16bits(signExtend(CURRENT_LATCHES.REGS[sr1], 15) >> shift);
+         } else BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] >> shift);
+      } else BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] << shift);
+   } else if (gate == 0x08) {
+      if (GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION)) BUS = Low16bits(CURRENT_LATCHES.MDR);
+      else {
+         if (CURRENT_LATCHES.MAR & 0x01) BUS = Low16bits(signExtend((CURRENT_LATCHES.MDR >> 8) & 0x00FF, 7));
+         else BUS = Low16bits(signExtend(CURRENT_LATCHES.MDR & 0x00FF, 7));
+      }
+   }
 }
 
+void setConditionCodes(int result) {
+   if (result < 0) {
+      NEXT_LATCHES.N = 1;
+      NEXT_LATCHES.Z = 0;
+      NEXT_LATCHES.P = 0;
+   } else if (result > 0) {
+      NEXT_LATCHES.N = 0;
+      NEXT_LATCHES.Z = 0;
+      NEXT_LATCHES.P = 1;
+   } else {
+      NEXT_LATCHES.N = 0;
+      NEXT_LATCHES.Z = 1;
+      NEXT_LATCHES.P = 0;
+   }
+}
 
+/*
+* Datapath routine for computing all functions that need to latch
+* values in the data path at the end of this cycle.  Some values
+* require sourcing the bus; therefore, this routine has to come
+* after drive_bus.
+*/
 void latch_datapath_values() {
-
-  /*
-   * Datapath routine for computing all functions that need to latch
-   * values in the data path at the end of this cycle.  Some values
-   * require sourcing the bus; therefore, this routine has to come
-   * after drive_bus.
-   */
-
+   if (GetLD_MAR(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      NEXT_LATCHES.MAR = Low16bits(BUS);
+   }
+   if (GetLD_MDR(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      if (GetMIO_EN(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      int address = CURRENT_LATCHES.MAR >> 1;
+      int byte = CURRENT_LATCHES.MAR & 0x01;
+         if (CURRENT_LATCHES.READY) {
+            if (GetR_W(CURRENT_LATCHES.MICROINSTRUCTION)) {
+               if (GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION)) {
+                  MEMORY[address][0] = CURRENT_LATCHES.MDR & 0x00FF;
+                  MEMORY[address][1] = (CURRENT_LATCHES.MDR >> 8) & 0x00FF;
+               } else {
+                  MEMORY[address][byte] = CURRENT_LATCHES.MDR & 0x00FF;
+               }
+            } else {
+               if (GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION)) {
+                  CURRENT_LATCHES.MDR = MEMORY[address][0] & 0x00FF;
+                  CURRENT_LATCHES.MDR |= (MEMORY[address][1] & 0x00FF) << 8;
+               } else {
+                  CURRENT_LATCHES.MDR = MEMORY[address][byte] & 0x00FF;
+               }
+            }
+            NEXT_LATCHES.READY = 0;
+            MEMEN = 0;
+         }
+      } else {
+         if (GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION)) NEXT_LATCHES.MDR = Low16bits(BUS);
+         else {
+            if (CURRENT_LATCHES.MAR && 0x01) NEXT_LATCHES.MDR = (BUS & 0x00FF) << 8;
+            else NEXT_LATCHES.MDR = BUS & 0x00FF;
+         }
+      }
+   }
+   if (GetLD_IR(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      NEXT_LATCHES.IR = Low16bits(BUS);
+   }
+   if (GetLD_REG(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      if (GetDRMUX(CURRENT_LATCHES.MICROINSTRUCTION)) NEXT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 9) & 0x07] = Low16bits(BUS);
+      else NEXT_LATCHES.REGS[7] = Low16bits(BUS);
+   }
+   if (GetLD_CC(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      setConditionCodes(signExtend(Low16bits(BUS), 15));
+   }
+   if (GetLD_PC(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      if (GetPCMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 0) NEXT_LATCHES.PC = CURRENT_LATCHES.PC + 2;
+      else if (GetPCMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) NEXT_LATCHES.PC = Low16bits(BUS);
+      else {
+         int op1, op2;
+         if (GetADDR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
+            if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) op1 = (CURRENT_LATCHES.IR >> 6) & 0x07;
+            else op1 = (CURRENT_LATCHES.IR >> 9) & 0x07;
+         } else op1 = CURRENT_LATCHES.PC;
+         if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) op2 = signExtend(CURRENT_LATCHES.IR & 0x003F, 5);
+         else if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 2) op2 = signExtend(CURRENT_LATCHES.IR & 0x01FF, 8);
+         else if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 3) op2 = signExtend(CURRENT_LATCHES.IR & 0x07FF, 10);
+         else op2 = 0;
+         if (GetLSHF1(CURRENT_LATCHES.MICROINSTRUCTION)) op2 = op2 << 1;
+         BUS = CURRENT_LATCHES.REGS[op1] + op2;
+      }
+   }
 }
