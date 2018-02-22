@@ -574,14 +574,44 @@ int main(int argc, char *argv[]) {
    Begin your code here 	  			       */
 /***************************************************************/
 
+int signExtend(int num, int signbit) {
+   if (num && (1 << signbit)) {
+      num = num << (8*sizeof(int)-1-signbit);
+      num = num >> (8*sizeof(int)-1-signbit);
+   }
+   return(num);
+}
 
 void eval_micro_sequencer() {
-
   /*
    * Evaluate the address of the next state according to the
    * micro sequencer logic. Latch the next microinstruction.
    */
-
+   if(GetIRD(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      int inst = CURRENT_LATCHES.IR;
+      NEXT_LATCHES.BEN = ((inst & 0x0800) && CURRENT_LATCHES.N) || ((inst & 0x0400) && CURRENT_LATCHES.Z) || ((inst & 0x0200) && CURRENT_LATCHES.P);
+      NEXT_LATCHES.STATE_NUMBER = (inst >> 12) & 0x0F;
+   } else {
+      int j = GetJ(CURRENT_LATCHES.MICROINSTRUCTION);
+      int cond = GetCOND(CURRENT_LATCHES.MICROINSTRUCTION);
+      NEXT_LATCHES.STATE_NUMBER = j;
+      if (cond == 3) {
+         if (CURRENT_LATCHES.IR & 0x0800) {
+            NEXT_LATCHES.STATE_NUMBER |= 0x01;
+         }
+      } else if (cond == 2) {
+         if (CURRENT_LATCHES.BEN) {
+            NEXT_LATCHES.STATE_NUMBER |= 0x04;
+         }
+      } else if (cond == 1) {
+         if (CURRENT_LATCHES.READY) {
+            NEXT_LATCHES.STATE_NUMBER |= 0x02;
+         }
+      }
+   }
+   for (int i = 0; i < CONTROL_STORE_BITS; i++) {
+      NEXT_LATCHES.MICROINSTRUCTION[i] = CONTROL_STORE[NEXT_LATCHES.STATE_NUMBER][i];
+   }
 }
 
 
