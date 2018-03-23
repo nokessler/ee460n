@@ -267,6 +267,8 @@ void cycle() {
   CURRENT_LATCHES = NEXT_LATCHES;
 
   CYCLE_COUNT++;
+
+  if (CYCLE_COUNT == 299) NEXT_LATCHES.INT = 1;
 }
 
 /***************************************************************/
@@ -672,6 +674,7 @@ void eval_micro_sequencer() {
       } else if (cond == 4) {
          if (CURRENT_LATCHES.INT) {
             NEXT_LATCHES.STATE_NUMBER |= 0x08;
+            NEXT_LATCHES.INT = 0;
          }
       } else if (cond == 3) {
          if (CURRENT_LATCHES.IR & 0x0800) {
