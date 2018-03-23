@@ -70,8 +70,8 @@ enum CS_BITS {
     GATE_MARMUX,
     GATE_SHF,
     PCMUX1, PCMUX0,
-    DRMUX,
-    SR1MUX,
+    DRMUX1, DRMUX0,
+    SR1MUX1, SR1MUX0,
     ADDR1MUX,
     ADDR2MUX1, ADDR2MUX0,
     MARMUX,
@@ -81,6 +81,26 @@ enum CS_BITS {
     DATA_SIZE,
     LSHF1,
 /* MODIFY: you have to add all your new control signals */
+    SPMUX,
+    EXCMUX,
+    IEMUX,
+    LD_TEMP,
+    LD_PSR,
+    LD_PRIV,
+    LD_SaveSSP,
+    LD_SaveUSP,
+    LD_EX,
+    LD_EXCV,
+    LD_Vector,
+    LD_INTV,
+    ALIGN,
+    GATE_TEMP,
+    GATE_PSR,
+    GATE_PCM2,
+    GATE_SPMUX,
+    GATE_SSP,
+    GATE_USP,
+    GATE_Vector,
     CONTROL_STORE_BITS
 } CS_BITS;
 
@@ -105,8 +125,8 @@ int GetGATE_ALU(int *x)      { return(x[GATE_ALU]); }
 int GetGATE_MARMUX(int *x)   { return(x[GATE_MARMUX]); }
 int GetGATE_SHF(int *x)      { return(x[GATE_SHF]); }
 int GetPCMUX(int *x)         { return((x[PCMUX1] << 1) + x[PCMUX0]); }
-int GetDRMUX(int *x)         { return(x[DRMUX]); }
-int GetSR1MUX(int *x)        { return(x[SR1MUX]); }
+int GetDRMUX(int *x)         { return((x[DRMUX1] << 1) + x[DRMUX0]); }
+int GetSR1MUX(int *x)        { return((x[SR1MUX1] << 1) + x[SR1MUX0]); }
 int GetADDR1MUX(int *x)      { return(x[ADDR1MUX]); }
 int GetADDR2MUX(int *x)      { return((x[ADDR2MUX1] << 1) + x[ADDR2MUX0]); }
 int GetMARMUX(int *x)        { return(x[MARMUX]); }
@@ -115,6 +135,27 @@ int GetMIO_EN(int *x)        { return(x[MIO_EN]); }
 int GetR_W(int *x)           { return(x[R_W]); }
 int GetDATA_SIZE(int *x)     { return(x[DATA_SIZE]); }
 int GetLSHF1(int *x)         { return(x[LSHF1]); }
+int GetSPMUX(int *x)         { return(x[SPMUX]); }
+int GetEXCMUX(int *x)        { return(x[EXCMUX]); }
+int GetIEMUX(int *x)         { return(x[IEMUX]); }
+int GetLD_TEMP(int *x)       { return(x[LD_TEMP]); }
+int GetLD_PSR(int *x)        { return(x[LD_PSR]); }
+int GetLD_PRIV(int *x)       { return(x[LD_PRIV]); }
+int GetLD_SaveSSP(int *x)    { return(x[LD_SaveSSP]); }
+int GetLD_SaveUSP(int *x)    { return(x[LD_SaveUSP]); }
+int GetLD_EX(int *x)         { return(x[LD_EX]); }
+int GetLD_EXCV(int *x)       { return(x[LD_EXCV]); }
+int GetLD_Vector(int *x)     { return(x[LD_Vector]); }
+int GetLD_INTV(int *x)       { return(x[LD_INTV]); }
+int GetALIGN(int *x)         { return(x[ALIGN]); }
+int GetGATE_TEMP(int *x)     { return(x[GATE_TEMP]); }
+int GetGATE_PSR(int *x)      { return(x[GATE_PSR]); }
+int GetGATE_PCM2(int *x)     { return(x[GATE_PCM2]); }
+int GetGATE_SPMUX(int *x)    { return(x[GATE_SPMUX]); }
+int GetGATE_SSP(int *x)      { return(x[GATE_SSP]); }
+int GetGATE_USP(int *x)      { return(x[GATE_USP]); }
+int GetGATE_Vector(int *x)   { return(x[GATE_Vector]); }
+
 /* MODIFY: you can add more Get functions for your new control signals */
 
 /***************************************************************/
@@ -173,6 +214,12 @@ int INTV; /* Interrupt vector register */
 int EXCV; /* Exception vector register */
 int SSP; /* Initial value of system stack pointer */
 /* MODIFY: You may add system latches that are required by your implementation */
+int PSR;
+int TEMP;
+int VECTOR;
+int USP;
+int EX;
+int INT;
 
 } System_Latches;
 
@@ -610,7 +657,23 @@ void eval_micro_sequencer() {
       int j = GetJ(CURRENT_LATCHES.MICROINSTRUCTION);
       int cond = GetCOND(CURRENT_LATCHES.MICROINSTRUCTION);
       NEXT_LATCHES.STATE_NUMBER = j;
-      if (cond == 3) {
+      if (cond == 7) {
+         if (CURRENT_LATCHES.EX & 1) {
+            NEXT_LATCHES.STATE_NUMBER |= 0x20;
+         }
+      } else if (cond == 6) {
+         if (CURRENT_LATCHES.EX & 1) {
+            NEXT_LATCHES.STATE_NUMBER |= 0x10;
+         }
+      } else if (cond == 5) {
+         if (CURRENT_LATCHES.PSR & 0x0080) {
+            NEXT_LATCHES.STATE_NUMBER |= 0x10;
+         }
+      } else if (cond == 4) {
+         if (CURRENT_LATCHES.INT) {
+            NEXT_LATCHES.STATE_NUMBER |= 0x08;
+         }
+      } else if (cond == 3) {
          if (CURRENT_LATCHES.IR & 0x0800) {
             NEXT_LATCHES.STATE_NUMBER |= 0x01;
          }
@@ -673,30 +736,65 @@ void cycle_memory() {
 *		 Gate_PC,
 *		 Gate_ALU,
 *		 Gate_SHF,
-*		 Gate_MDR.
+*		 Gate_MDR,
+*      Gate_TEMP,
+*      Gate_PSR,
+*		 Gate_PCM2,
+*		 Gate_SPMUX,
+*		 Gate_SSP,
+*		 Gate_USP,
+*      Gate_Vector.
 */
 int gate;
 void eval_bus_drivers() {
    gate = 0;
    if (GetGATE_MARMUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
-      gate = 0x01;
+      gate = 0x0001;
       printf("driving GATE_MARMUX\n");
    }
    if (GetGATE_PC(CURRENT_LATCHES.MICROINSTRUCTION)) {
-      gate = 0x02;
+      gate = 0x0002;
       printf("driving GATE_PC\n");
    }
    if (GetGATE_ALU(CURRENT_LATCHES.MICROINSTRUCTION)) {
-      gate = 0x04;
+      gate = 0x0004;
       printf("driving GATE_ALU\n");
    }
    if (GetGATE_SHF(CURRENT_LATCHES.MICROINSTRUCTION)) {
-      gate = 0x08;
+      gate = 0x0008;
       printf("driving GATE_SHF\n");
    }
    if (GetGATE_MDR(CURRENT_LATCHES.MICROINSTRUCTION)) {
-      gate = 0x10;
+      gate = 0x0010;
       printf("driving GATE_MDR\n");
+   }
+   if (GetGATE_TEMP(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      gate = 0x0020;
+      printf("driving GATE_TEMP\n");
+   }
+   if (GetGATE_PSR(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      gate = 0x0040;
+      printf("driving GATE_PSR\n");
+   }
+   if (GetGATE_PCM2(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      gate = 0x0080;
+      printf("driving GATE_PCM2\n");
+   }
+   if (GetGATE_SPMUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      gate = 0x0100;
+      printf("driving GATE_SPMUX\n");
+   }
+   if (GetGATE_SSP(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      gate = 0x0200;
+      printf("driving GATE_SSP\n");
+   }
+   if (GetGATE_USP(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      gate = 0x0400;
+      printf("driving GATE_USP\n");
+   }
+   if (GetGATE_Vector(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      gate = 0x0800;
+      printf("driving GATE_Vector\n");
    }
 }
 
@@ -706,7 +804,7 @@ void eval_bus_drivers() {
 */
 void drive_bus() {
    if (gate == 0) BUS = 0;
-   else if (gate == 0x01) {
+   else if (gate == 0x0001) {
       if (GetMARMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 0) {
          printf("optput IR\n");
          BUS = (CURRENT_LATCHES.IR & 0x00FF) << 1;
@@ -748,9 +846,9 @@ void drive_bus() {
          }
          BUS = op1 + op2;
       }
-   } else if (gate == 0x02) {
+   } else if (gate == 0x0002) {
       BUS = CURRENT_LATCHES.PC;
-   } else if (gate == 0x04) {
+   } else if (gate == 0x0004) {
       int sr1, sr2;
       if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
          sr1 = (CURRENT_LATCHES.IR >> 6) & 0x07;
@@ -790,7 +888,7 @@ void drive_bus() {
             BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] ^ CURRENT_LATCHES.REGS[sr2]);
          }
       }
-   } else if (gate == 0x08) {
+   } else if (gate == 0x0008) {
       int sr1;
       if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) sr1 = (CURRENT_LATCHES.IR >> 6) & 0x07;
       else sr1 = (CURRENT_LATCHES.IR >> 9) & 0x07;
@@ -800,11 +898,33 @@ void drive_bus() {
             BUS = Low16bits(signExtend(CURRENT_LATCHES.REGS[sr1], 15) >> shift);
          } else BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] >> shift);
       } else BUS = Low16bits(CURRENT_LATCHES.REGS[sr1] << shift);
-   } else if (gate == 0x10) {
+   } else if (gate == 0x0010) {
       if (GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION)) BUS = Low16bits(CURRENT_LATCHES.MDR);
       else {
          BUS = Low16bits(signExtend(CURRENT_LATCHES.MDR & 0x00FF, 7));
       }
+   } else if (gate == 0x0020) {
+      BUS = CURRENT_LATCHES.TEMP;
+   } else if (gate == 0x0040) {
+      BUS = CURRENT_LATCHES.PSR;
+   } else if (gate == 0x0080) {
+      BUS = (CURRENT_LATCHES.PC - 2);
+   } else if (gate == 0x0100) {
+      if (GetDRMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 0x10) {
+         if (GetSPMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) {
+            int n = signExtend(Low16bits(CURRENT_LATCHES.REGS[6]), 15) + 2;
+            BUS = Low16bits(n);
+         } else {
+            int n = signExtend(Low16bits(CURRENT_LATCHES.REGS[6]), 15) - 2;
+            BUS = Low16bits(n);
+         }
+      }
+   } else if (gate == 0x0200) {
+      BUS = CURRENT_LATCHES.SSP;
+   } else if (gate == 0x0400) {
+      BUS = CURRENT_LATCHES.USP;
+   } else if (gate == 0x0800) {
+      BUS = CURRENT_LATCHES.VECTOR;
    }
 }
 
@@ -889,5 +1009,47 @@ void latch_datapath_values() {
          if (GetLSHF1(CURRENT_LATCHES.MICROINSTRUCTION)) op2 = op2 << 1;
          NEXT_LATCHES.PC = op1 + op2;
       }
+   }
+   if (GetLD_TEMP(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      NEXT_LATCHES.TEMP = Low16bits(BUS);
+   }
+   if (GetLD_PSR(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      NEXT_LATCHES.PSR = Low16bits(BUS);
+   }
+   if (GetLD_PRIV(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      NEXT_LATCHES.PSR &= 0x007F;
+   }
+   if (GetLD_SaveSSP(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      NEXT_LATCHES.SSP = Low16bits(BUS);
+   }
+   if (GetLD_SaveUSP(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      NEXT_LATCHES.USP = Low16bits(BUS);
+   }
+   if (GetLD_EX(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      int ex = 0;
+      if ((CURRENT_LATCHES.PSR & 0x8000) && (CURRENT_LATCHES.MAR < 0x3000)) {
+         ex = 3;
+      } else if ((CURRENT_LATCHES.MAR & 0x01) && GetALIGN(CURRENT_LATCHES.MICROINSTRUCTION)) {
+         ex = 1;
+      }
+      NEXT_LATCHES.EX = ex;
+   }
+   if (GetLD_EXCV(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      int mux1 = GetEXCMUX(CURRENT_LATCHES.MICROINSTRUCTION);
+      int mux2;
+      if (mux1 == 2) mux2 = 3;
+      else if (mux1 == 1) mux2 = 0;
+      else mux2 = CURRENT_LATCHES.EX;
+      if (mux2 == 0) NEXT_LATCHES.EXCV = 0x04;
+      else if (mux2 == 1) NEXT_LATCHES.EXCV = 0x03;
+      else if (mux2 == 3) NEXT_LATCHES.EXCV = 0x02;
+   }
+   if (GetLD_Vector(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      if (GetIEMUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
+         NEXT_LATCHES.VECTOR = CURRENT_LATCHES.EXCV;
+      } else NEXT_LATCHES.VECTOR = CURRENT_LATCHES.INTV;
+   }
+   if (GetLD_INTV(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      NEXT_LATCHES.INTV = 0x01;
    }
 }
