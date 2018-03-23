@@ -268,7 +268,10 @@ void cycle() {
 
   CYCLE_COUNT++;
 
-  if (CYCLE_COUNT == 299) NEXT_LATCHES.INT = 1;
+  if (CYCLE_COUNT == 299) {
+     NEXT_LATCHES.INT = 1;
+     NEXT_LATCHES.INTV = 0x01;
+  }
 }
 
 /***************************************************************/
@@ -579,6 +582,8 @@ void initialize(char *ucode_filename, char *program_filename, int num_prog_files
     CURRENT_LATCHES.STATE_NUMBER = INITIAL_STATE_NUMBER;
     memcpy(CURRENT_LATCHES.MICROINSTRUCTION, CONTROL_STORE[INITIAL_STATE_NUMBER], sizeof(int)*CONTROL_STORE_BITS);
     CURRENT_LATCHES.SSP = 0x3000; /* Initial value of system stack pointer */
+    CURRENT_LATCHES.INT = 0;
+    CURRENT_LATCHES.PSR = 0x8002;
 
     NEXT_LATCHES = CURRENT_LATCHES;
 
@@ -1040,7 +1045,6 @@ void latch_datapath_values() {
    if (GetLD_EXCV(CURRENT_LATCHES.MICROINSTRUCTION)) {
       int mux1 = GetEXCMUX(CURRENT_LATCHES.MICROINSTRUCTION);
       int mux2;
-      if (mux1 == 2) mux2 = 3;
       else if (mux1 == 1) mux2 = 0;
       else mux2 = CURRENT_LATCHES.EX;
       if (mux2 == 0) NEXT_LATCHES.EXCV = 0x04;
@@ -1049,10 +1053,7 @@ void latch_datapath_values() {
    }
    if (GetLD_Vector(CURRENT_LATCHES.MICROINSTRUCTION)) {
       if (GetIEMUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
-         NEXT_LATCHES.VECTOR = CURRENT_LATCHES.EXCV;
-      } else NEXT_LATCHES.VECTOR = CURRENT_LATCHES.INTV;
-   }
-   if (GetLD_INTV(CURRENT_LATCHES.MICROINSTRUCTION)) {
-      NEXT_LATCHES.INTV = 0x01;
+         NEXT_LATCHES.VECTOR = (CURRENT_LATCHES.EXCV << 1) | 0x0200;
+      } else NEXT_LATCHES.VECTOR = (CURRENT_LATCHES.INTV << 1) | 0x0200;
    }
 }
