@@ -3,7 +3,7 @@
 ;push R0 and R1
 ADD R6, R6, #-2
 STW R0, R6, #0
-ADD R0, R6, #2
+ADD R6, R6, #-2
 STW R1, R6, #0
 
 ;add 1 to data at x4000

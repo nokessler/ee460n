@@ -55,7 +55,7 @@ void latch_datapath_values();
 /***************************************************************/
 enum CS_BITS {
     IRD,
-    COND1, COND0,
+    COND2, COND1, COND0,
     J5, J4, J3, J2, J1, J0,
     LD_MAR,
     LD_MDR,
@@ -92,8 +92,6 @@ enum CS_BITS {
     LD_EX,
     LD_EXCV,
     LD_Vector,
-    LD_INTV,
-    ALIGN,
     GATE_TEMP,
     GATE_PSR,
     GATE_PCM2,
@@ -101,6 +99,7 @@ enum CS_BITS {
     GATE_SSP,
     GATE_USP,
     GATE_Vector,
+    ALIGN,
     CONTROL_STORE_BITS
 } CS_BITS;
 
@@ -108,7 +107,7 @@ enum CS_BITS {
 /* Functions to get at the control bits.                       */
 /***************************************************************/
 int GetIRD(int *x)           { return(x[IRD]); }
-int GetCOND(int *x)          { return((x[COND1] << 1) + x[COND0]); }
+int GetCOND(int *x)          { return((x[COND2] << 2) + (x[COND1] << 1) + x[COND0]); }
 int GetJ(int *x)             { return((x[J5] << 5) + (x[J4] << 4) +
 				      (x[J3] << 3) + (x[J2] << 2) +
 				      (x[J1] << 1) + x[J0]); }
@@ -146,7 +145,6 @@ int GetLD_SaveUSP(int *x)    { return(x[LD_SaveUSP]); }
 int GetLD_EX(int *x)         { return(x[LD_EX]); }
 int GetLD_EXCV(int *x)       { return(x[LD_EXCV]); }
 int GetLD_Vector(int *x)     { return(x[LD_Vector]); }
-int GetLD_INTV(int *x)       { return(x[LD_INTV]); }
 int GetALIGN(int *x)         { return(x[ALIGN]); }
 int GetGATE_TEMP(int *x)     { return(x[GATE_TEMP]); }
 int GetGATE_PSR(int *x)      { return(x[GATE_PSR]); }
@@ -820,7 +818,7 @@ void drive_bus() {
          printf("adder\n");
          int op1, op2;
          if (GetADDR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
-            if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
+            if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) {
                op1 = CURRENT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 6) & 0x07];
                printf("source 1 = 8:6\n");
             }
@@ -858,9 +856,12 @@ void drive_bus() {
       BUS = CURRENT_LATCHES.PC;
    } else if (gate == 0x0004) {
       int sr1, sr2;
-      if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) {
          sr1 = (CURRENT_LATCHES.IR >> 6) & 0x07;
          printf("source 1 = 8:6\n");
+      } else if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 2) {
+         sr1 = 6;
+         printf("source 1 = R6\n");
       }
       else {
          sr1 = (CURRENT_LATCHES.IR >> 9) & 0x07;
@@ -898,7 +899,7 @@ void drive_bus() {
       }
    } else if (gate == 0x0008) {
       int sr1;
-      if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) sr1 = (CURRENT_LATCHES.IR >> 6) & 0x07;
+      if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) sr1 = (CURRENT_LATCHES.IR >> 6) & 0x07;
       else sr1 = (CURRENT_LATCHES.IR >> 9) & 0x07;
       int shift = CURRENT_LATCHES.IR & 0x0F;
       if (CURRENT_LATCHES.IR & 0x0010) {
@@ -918,7 +919,7 @@ void drive_bus() {
    } else if (gate == 0x0080) {
       BUS = (CURRENT_LATCHES.PC - 2);
    } else if (gate == 0x0100) {
-      if (GetDRMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 0x10) {
+      if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 2) {
          if (GetSPMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) {
             int n = signExtend(Low16bits(CURRENT_LATCHES.REGS[6]), 15) + 2;
             BUS = Low16bits(n);
@@ -941,14 +942,20 @@ void setConditionCodes(int result) {
       NEXT_LATCHES.N = 1;
       NEXT_LATCHES.Z = 0;
       NEXT_LATCHES.P = 0;
+      NEXT_LATCHES.PSR &= 0x8000;
+      NEXT_LATCHES.PSR |= 0x0004;
    } else if (result > 0) {
       NEXT_LATCHES.N = 0;
       NEXT_LATCHES.Z = 0;
       NEXT_LATCHES.P = 1;
+      NEXT_LATCHES.PSR &= 0x8000;
+      NEXT_LATCHES.PSR |= 0x0001;
    } else {
       NEXT_LATCHES.N = 0;
       NEXT_LATCHES.Z = 1;
       NEXT_LATCHES.P = 0;
+      NEXT_LATCHES.PSR &= 0x8000;
+      NEXT_LATCHES.PSR |= 0x0002;
    }
 }
 
@@ -987,7 +994,8 @@ void latch_datapath_values() {
    }
    if (GetLD_REG(CURRENT_LATCHES.MICROINSTRUCTION)) {
       if (GetDRMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 0) NEXT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 9) & 0x07] = Low16bits(BUS);
-      else NEXT_LATCHES.REGS[7] = Low16bits(BUS);
+      else if (GetDRMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) NEXT_LATCHES.REGS[7] = Low16bits(BUS);
+      else NEXT_LATCHES.REGS[6] = Low16bits(BUS);
    }
    if (GetLD_CC(CURRENT_LATCHES.MICROINSTRUCTION)) {
       setConditionCodes(signExtend(Low16bits(BUS), 15));
@@ -1005,7 +1013,7 @@ void latch_datapath_values() {
          printf("loading pc from adder\n");
          int op1, op2;
          if (GetADDR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
-            if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)) op1 = CURRENT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 6) & 0x07];
+            if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) op1 = CURRENT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 6) & 0x07];
             else op1 = CURRENT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 9) & 0x07];
          } else {
             op1 = CURRENT_LATCHES.PC;
@@ -1023,15 +1031,22 @@ void latch_datapath_values() {
    }
    if (GetLD_PSR(CURRENT_LATCHES.MICROINSTRUCTION)) {
       NEXT_LATCHES.PSR = Low16bits(BUS);
+      NEXT_LATCHES.N = BUS & 0x04;
+      NEXT_LATCHES.Z = BUS & 0x02;
+      NEXT_LATCHES.P = BUS & 0x01;
    }
    if (GetLD_PRIV(CURRENT_LATCHES.MICROINSTRUCTION)) {
       NEXT_LATCHES.PSR &= 0x007F;
    }
    if (GetLD_SaveSSP(CURRENT_LATCHES.MICROINSTRUCTION)) {
-      NEXT_LATCHES.SSP = Low16bits(BUS);
+      if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 2) {
+         NEXT_LATCHES.SSP = Low16bits(CURRENT_LATCHES.REGS[6]);
+      }
    }
    if (GetLD_SaveUSP(CURRENT_LATCHES.MICROINSTRUCTION)) {
-      NEXT_LATCHES.USP = Low16bits(BUS);
+      if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 2) {
+         NEXT_LATCHES.USP = Low16bits(CURRENT_LATCHES.REGS[6]);
+      }
    }
    if (GetLD_EX(CURRENT_LATCHES.MICROINSTRUCTION)) {
       int ex = 0;
@@ -1045,7 +1060,7 @@ void latch_datapath_values() {
    if (GetLD_EXCV(CURRENT_LATCHES.MICROINSTRUCTION)) {
       int mux1 = GetEXCMUX(CURRENT_LATCHES.MICROINSTRUCTION);
       int mux2;
-      else if (mux1 == 1) mux2 = 0;
+      if (mux1 == 1) mux2 = 0;
       else mux2 = CURRENT_LATCHES.EX;
       if (mux2 == 0) NEXT_LATCHES.EXCV = 0x04;
       else if (mux2 == 1) NEXT_LATCHES.EXCV = 0x03;
@@ -1054,6 +1069,10 @@ void latch_datapath_values() {
    if (GetLD_Vector(CURRENT_LATCHES.MICROINSTRUCTION)) {
       if (GetIEMUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
          NEXT_LATCHES.VECTOR = (CURRENT_LATCHES.EXCV << 1) | 0x0200;
-      } else NEXT_LATCHES.VECTOR = (CURRENT_LATCHES.INTV << 1) | 0x0200;
+         printf("loading exception vector\n");
+      } else {
+         NEXT_LATCHES.VECTOR = (CURRENT_LATCHES.INTV << 1) | 0x0200;
+         printf("loading interrupt vector\n");
+      }
    }
 }
