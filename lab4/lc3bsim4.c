@@ -1050,13 +1050,17 @@ void latch_datapath_values() {
    }
    if (GetLD_EX(CURRENT_LATCHES.MICROINSTRUCTION)) {
       int ex = 0;
-      if ((CURRENT_LATCHES.PSR & 0x8000) && (CURRENT_LATCHES.MAR < 0x3000)) {
+      printf("PSR: %x\n", CURRENT_LATCHES.PSR);
+      printf("MAR: %x\n", Low16bits(BUS));
+      printf("ALIGN: %x\n", GetALIGN(CURRENT_LATCHES.MICROINSTRUCTION));
+      if ((CURRENT_LATCHES.PSR & 0x8000) && (Low16bits(BUS) < 0x3000)) {
          ex = 3;
-      } else if ((CURRENT_LATCHES.MAR & 0x01) && GetALIGN(CURRENT_LATCHES.MICROINSTRUCTION)) {
+      } else if ((Low16bits(BUS) & 0x01) && GetALIGN(CURRENT_LATCHES.MICROINSTRUCTION)) {
          ex = 1;
       }
       NEXT_LATCHES.EX = ex;
-   }
+      printf("EX: %x\n", ex);
+   } else NEXT_LATCHES.EX = 0;
    if (GetLD_EXCV(CURRENT_LATCHES.MICROINSTRUCTION)) {
       int mux1 = GetEXCMUX(CURRENT_LATCHES.MICROINSTRUCTION);
       int mux2;
