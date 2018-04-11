@@ -24,16 +24,7 @@ LOOP LDB R3, R0, #0
    LDW R0, R2, #0
    STW R1, R0, #0
 
-;uncomment to test protection exception
-   AND R0, R0, #0
-   STW R2, R0, #0
-
-;uncomment to test unaligned access exception
-   ;ADD R0, R0, #3
-   ;STW R1, R0, #0
-
-;uncomment to test unknown opcode exception
-   ;.FILL xA000
+   JMP R1
 
    HALT
 
