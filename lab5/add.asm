@@ -1,5 +1,5 @@
    .ORIG x3000
-
+   
 ;add first 20 bytes stored at xC000
    LEA R1, ADR2
    LDW R0, R1, #0

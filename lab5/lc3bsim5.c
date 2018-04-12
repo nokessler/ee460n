@@ -56,7 +56,7 @@ void latch_datapath_values();
 /***************************************************************/
 enum CS_BITS {
     IRD,
-    ARS,
+    ARS
     COND2, COND1, COND0,
     J5, J4, J3, J2, J1, J0,
     LD_MAR,
