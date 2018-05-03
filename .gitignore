@@ -52,3 +52,9 @@ Mkfile.old
 dkms.conf
 
 *.DS_Store
+
+# Spreadsheets
+*.xls
+*.xlsx
+
+*.jpeg
