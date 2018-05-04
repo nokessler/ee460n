@@ -997,23 +997,24 @@ void AGEX_stage() {
       addr1 = (Get_ADDR1MUX(PS.AGEX_CS) ? PS.AGEX_SR1 : PS.AGEX_NPC);
       switch (Get_ADDR2MUX(PS.AGEX_CS)) {
          case 0: addr2 = 0; break;
-         case 1: addr2 = signExtend(PS.AGEX_IR & 0x003F, 5) << 1; break;
-         case 2: addr2 = signExtend(PS.AGEX_IR & 0x01FF, 8) << 1; break;
-         case 3: addr2 = signExtend(PS.AGEX_IR & 0x07FF, 10) << 1; break;
+         case 1: addr2 = signExtend(PS.AGEX_IR & 0x003F, 5); break;
+         case 2: addr2 = signExtend(PS.AGEX_IR & 0x01FF, 8); break;
+         case 3: addr2 = signExtend(PS.AGEX_IR & 0x07FF, 10); break;
       }
+      if (Get_LSHF1(PS.AGEX_CS)) addr2 = addr2 << 1;
       address = Low16bits(addr1 + addr2);
    } else {
-      address = Low16bits(signExtend(PS.AGEX_IR & 0x00FF, 7) << 1);
+      address = Low16bits((PS.AGEX_IR &  0x00FF) << 1);
    }
    int result;
    if (Get_ALU_RESULTMUX(PS.AGEX_CS)) {
       int sr1 = signExtend(PS.AGEX_SR1, 15), sr2;
       sr2 = (Get_SR2MUX(PS.AGEX_CS) ? signExtend(PS.AGEX_IR & 0x1F, 4) : signExtend(PS.AGEX_SR2, 16));
       switch (Get_ALUK(PS.AGEX_CS)) {
-         case 0: result = Low16bits(sr1 + sr2);
-         case 1: result = Low16bits(sr1 & sr2);
-         case 2: result = Low16bits(sr1 ^ sr2);
-         case 3: result = Low16bits(sr1);
+         case 0: result = Low16bits(sr1 + sr2); break;
+         case 1: result = Low16bits(sr1 & sr2); break;
+         case 2: result = Low16bits(sr1 ^ sr2); break;
+         case 3: result = Low16bits(sr1); break;
       }
    } else {
       if (PS.AGEX_IR & 0x0010) {
@@ -1055,6 +1056,7 @@ void DE_stage() {
       Z = sr_z;
       P = sr_p;
    }
+   dep_stall = 0;
    if (PS.DE_V) {
       if (Get_SR1_NEEDED(CONTROL_STORE[CONTROL_STORE_ADDRESS])) {
          if ((v_agex_ld_reg && (PS.AGEX_DRID == sr1)) || (v_mem_ld_reg && (PS.MEM_DRID == sr1)) || (v_sr_ld_reg && (PS.SR_DRID == sr1))) dep_stall = 1;
@@ -1090,7 +1092,7 @@ void FETCH_stage() {
    pcp2 = PC + 2;
    int ir;
    icache_access(PC, &ir, &icache_r);
-   if (!(dep_stall || mem_stall || v_de_br_stall || v_agex_br_stall || v_mem_br_stall) && icache_r) PC = pc_temp;
+   if ((!(dep_stall || mem_stall || v_de_br_stall || v_agex_br_stall || v_mem_br_stall) && icache_r) || (v_mem_br_stall && mem_pcmux)) PC = pc_temp;
    int LD_DE = !mem_stall & !dep_stall;
    if (LD_DE) {
       NEW_PS.DE_NPC = pcp2;
