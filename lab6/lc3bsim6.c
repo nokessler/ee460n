@@ -945,7 +945,7 @@ void MEM_stage() {
    if (Get_DCACHE_RW(PS.MEM_CS)) {
       if (Get_DATA_SIZE(PS.MEM_CS)) we0 = we1 = 1;
       else {
-         if (PS.MEM_ADDRESS && 0x01) we1 = 1;
+         if (PS.MEM_ADDRESS & 0x01) we1 = 1;
          else we0 = 1;
       }
    }
@@ -961,6 +961,7 @@ void MEM_stage() {
       if (PS.MEM_ADDRESS & 0x01) data_out = Low16bits(signExtend((data_out >> 8) & 0x00FF, 7));
       else data_out = Low16bits(signExtend(data_out & 0x00FF, 7));
    }
+   target_pc = PS.MEM_ADDRESS;
    trap_pc = data_out;
    v_mem_br_stall = Get_MEM_BR_STALL(PS.MEM_CS) & PS.MEM_V;
    v_mem_ld_reg = Get_MEM_LD_REG(PS.MEM_CS) & PS.MEM_V;
@@ -970,7 +971,7 @@ void MEM_stage() {
       if (Get_BR_OP(PS.MEM_CS)) {
          if (((PS.MEM_IR & 0x0800) && (PS.MEM_CC & 0x0004)) || ((PS.MEM_IR & 0x0400) && (PS.MEM_CC & 0x0002)) || ((PS.MEM_IR & 0x0200) && (PS.MEM_CC & 0x0001))) mem_pcmux = 1;
       } else if (Get_UNCOND_OP(PS.MEM_CS)) mem_pcmux = 1;
-      else if (Get_TRAP_OP(PS.MEM_CS)) mem_pcmux = 1;
+      else if (Get_TRAP_OP(PS.MEM_CS)) mem_pcmux = 2;
    }
    NEW_PS.SR_ADDRESS = PS.MEM_ADDRESS;
    NEW_PS.SR_DATA = data_out;
@@ -1009,12 +1010,12 @@ void AGEX_stage() {
    int result;
    if (Get_ALU_RESULTMUX(PS.AGEX_CS)) {
       int sr1 = signExtend(PS.AGEX_SR1, 15), sr2;
-      sr2 = (Get_SR2MUX(PS.AGEX_CS) ? signExtend(PS.AGEX_IR & 0x1F, 4) : signExtend(PS.AGEX_SR2, 16));
+      sr2 = (Get_SR2MUX(PS.AGEX_CS) ? signExtend(PS.AGEX_IR & 0x1F, 4) : signExtend(PS.AGEX_SR2, 15));
       switch (Get_ALUK(PS.AGEX_CS)) {
          case 0: result = Low16bits(sr1 + sr2); break;
          case 1: result = Low16bits(sr1 & sr2); break;
          case 2: result = Low16bits(sr1 ^ sr2); break;
-         case 3: result = Low16bits(sr1); break;
+         case 3: result = Low16bits(sr2); break;
       }
    } else {
       if (PS.AGEX_IR & 0x0010) {
